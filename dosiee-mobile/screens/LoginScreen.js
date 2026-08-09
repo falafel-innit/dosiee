@@ -3,6 +3,7 @@ import { View, TextInput, TouchableOpacity, Text, StyleSheet } from 'react-nativ
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, shadow } from '../theme';
+import { getErrorMessage } from '../utils/errorMessage';
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState('');
@@ -19,7 +20,7 @@ export default function LoginScreen({ navigation }) {
       await setToken(response.data.access_token);
       await setUserEmail(email);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed');
+      setError(getErrorMessage(err, 'Login failed'));
     } finally {
       setSubmitting(false);
     }

@@ -3,7 +3,9 @@ from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from app import models
 from app.services.embeddings import retrieve_relevant_chunks
+from app.services.drug_lookup import get_drug_info
 import datetime
+from google import genai
 
 load_dotenv()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -31,20 +33,66 @@ def tool_get_today_doses(db: Session, user_id: int):
     return [{"name": d.medicine.name, "time": d.scheduled_time.strftime("%I:%M %p"), "taken": d.taken} for d in doses]
 
 
+def _live_lookup_user_medicines(db: Session, user_medicines: list) -> list:
+    """
+    Calls the OpenFDA/RxNorm-backed get_drug_info() in real time for each
+    of the user's own confirmed medicines. get_drug_info() checks the local
+    Postgres cache first, so this only hits the live APIs on a genuine cache
+    miss (first question about that drug) — every question after is instant.
+    """
+    lines = []
+    seen = set()
+    for name in user_medicines:
+        key = name.lower().strip()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        try:
+            drug = get_drug_info(db, name)
+        except Exception as e:
+            print(f"Live drug lookup failed for '{name}': {e}")
+            drug = None
+
+        if not drug:
+            continue
+
+        if drug.indications:
+            lines.append(f"{drug.generic_name} is used for: {drug.indications}")
+        if drug.dosage_info:
+            lines.append(f"{drug.generic_name} dosage information: {drug.dosage_info}")
+        if drug.warnings:
+            lines.append(f"{drug.generic_name} warnings: {drug.warnings}")
+        if drug.side_effects:
+            lines.append(f"{drug.generic_name} side effects: {drug.side_effects}")
+
+    return lines
+
+
 def build_context(db: Session, user_id: int, question: str) -> str:
     """
-    Assembles everything the LLM needs to answer: retrieved drug
-    knowledge (RAG) + the user's own data (direct DB queries) —
-    the hybrid architecture discussed earlier.
+    Assembles everything the LLM needs to answer:
+      1. Real-time OpenFDA/RxNorm lookup for the user's own medicines
+         (guarantees coverage, cached after the first call per drug)
+      2. Vector-retrieved chunks from anything already embedded (covers
+         other drugs previously cached, e.g. by another user)
+      3. The user's own schedule data (direct DB queries)
     """
-    retrieved = retrieve_relevant_chunks(db, question, k=4)
     user_medicines = tool_get_user_medicines(db, user_id)
     today_doses = tool_get_today_doses(db, user_id)
 
+    live_info = _live_lookup_user_medicines(db, user_medicines)
+    retrieved = retrieve_relevant_chunks(db, question, k=4)
+
     context_parts = []
 
+    if live_info:
+        context_parts.append("Information about the user's own medicines:")
+        for line in live_info:
+            context_parts.append(f"- {line}")
+
     if retrieved:
-        context_parts.append("Relevant drug information:")
+        context_parts.append("\nOther relevant drug information:")
         for chunk in retrieved:
             context_parts.append(f"- {chunk['content']}")
 
@@ -64,6 +112,7 @@ If the context doesn't contain enough information to answer confidently, say so 
 rather than guessing. Never advise the user to stop, start, or change a dose — always
 direct medical decisions to their doctor or pharmacist. Keep answers concise and clear."""
 
+
 def generate_answer(question: str, context: str) -> str:
     """
     This is the ONLY function that talks to an LLM.
@@ -74,46 +123,16 @@ def generate_answer(question: str, context: str) -> str:
         return "The assistant isn't configured yet — missing GEMINI_API_KEY."
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(full_prompt)
+        client = genai.Client(api_key=GEMINI_API_KEY)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=full_prompt,
+        )
         return response.text.strip()
     except Exception as e:
         print(f"Gemini chatbot call failed: {e}")
         return "Sorry, I couldn't process that right now. Please try again in a moment."
-#def generate_answer(question: str, context: str) -> str:
-#    """
- #   This is the ONLY function that talks to an LLM. Swap the model/provider
-  #  here (OpenAI, Anthropic, Google, or a local model via Ollama) without
-   # touching any other part of the chatbot pipeline.
-    #"""
-    #full_prompt = f"{SYSTEM_PROMPT}\n\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
-
-    # Placeholder — plug in whichever provider you choose. Example shapes:
-    #
-    # OpenAI:
-    #   from openai import OpenAI
-    #   client = OpenAI()
-    #   response = client.chat.completions.create(model="gpt-4o-mini",
-    #       messages=[{"role": "user", "content": full_prompt}])
-    #   return response.choices[0].message.content
-    #
-    # Anthropic:
-    #   from anthropic import Anthropic
-    #   client = Anthropic()
-    #   response = client.messages.create(model="claude-...", max_tokens=500,
-    #       messages=[{"role": "user", "content": full_prompt}])
-    #   return response.content[0].text
-    #
-    # Local (Ollama, fully free/offline):
-    #   import requests
-    #   r = requests.post("http://localhost:11434/api/generate",
-    #       json={"model": "llama3", "prompt": full_prompt, "stream": False})
-    #   return r.json()["response"]
-
-    #raise NotImplementedError("Choose and wire in an LLM provider here.")
-
+        return "Sorry, I couldn't process that right now. Please try again in a moment."
 
 
 def answer_question(db: Session, user_id: int, question: str) -> str:

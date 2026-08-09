@@ -4,7 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import api, { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, shadow } from '../theme';
-import { scheduleDoseNotification } from '../services/notifications';
+import { scheduleDoseNotification, cancelNotificationsForPrescription, saveNotificationIdsForPrescription } from '../services/notifications';
 
 const ANCHORS = ['breakfast', 'lunch', 'dinner', 'sleep', 'extra'];
 const RELATION_RULES = {
@@ -94,9 +94,17 @@ export default function PrescriptionReviewScreen({ route, navigation }) {
 
     // NEW: schedule a local notification for every dose returned
     const doses = response.data.doses || [];
+
+    // Cancel any notifications left over from an earlier "Schedule" tap on
+    // this same prescription, so retries/re-confirms never pile up duplicates.
+    await cancelNotificationsForPrescription(id);
+
+    const identifiers = [];
     for (const dose of doses) {
-      await scheduleDoseNotification(dose.medicine_name, dose.dosage, dose.scheduled_time);
+      const identifier = await scheduleDoseNotification(dose.medicine_name, dose.dosage, dose.scheduled_time);
+      identifiers.push(identifier);
     }
+    await saveNotificationIdsForPrescription(id, identifiers);
 
     Alert.alert('Scheduled', `${medicines.length} medicine(s) added, with ${doses.length} reminder(s) set.`);
     navigation.navigate('HomeTab');

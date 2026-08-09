@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from 
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, shadow } from '../theme';
+import { getErrorMessage } from '../utils/errorMessage';
 
 const GENDERS = ['Male', 'Female', 'Other'];
 
@@ -39,7 +40,7 @@ export default function SignupScreen({ navigation }) {
       // No navigation call needed — App.js switches to the main app
       // automatically once a token is present.
     } catch (err) {
-      setError(err.response?.data?.detail || 'Signup failed');
+      setError(getErrorMessage(err, 'Signup failed'));
     } finally {
       setSubmitting(false);
     }

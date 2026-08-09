@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
 
@@ -11,6 +11,12 @@ class UserCreate(BaseModel):
     gender: str
     phone: str
 
+    @field_validator("phone")
+    @classmethod
+    def phone_must_be_10_digits(cls, v: str) -> str:
+        if not v.isdigit() or len(v) != 10:
+            raise ValueError("Phone number must be exactly 10 digits")
+        return v
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -34,6 +40,12 @@ class UserUpdate(BaseModel):
     age: Optional[int] = None
     gender: Optional[str] = None
 
+    @field_validator("phone")
+    @classmethod
+    def phone_must_be_10_digits(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and (not v.isdigit() or len(v) != 10):
+            raise ValueError("Phone number must be exactly 10 digits")
+        return v
 
 class Token(BaseModel):
     access_token: str
