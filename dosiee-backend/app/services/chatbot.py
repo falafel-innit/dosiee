@@ -1,7 +1,12 @@
+import os
+from dotenv import load_dotenv
 from sqlalchemy.orm import Session
 from app import models
 from app.services.embeddings import retrieve_relevant_chunks
 import datetime
+
+load_dotenv()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 
 def tool_get_user_medicines(db: Session, user_id: int):
@@ -59,14 +64,31 @@ If the context doesn't contain enough information to answer confidently, say so 
 rather than guessing. Never advise the user to stop, start, or change a dose — always
 direct medical decisions to their doctor or pharmacist. Keep answers concise and clear."""
 
-
 def generate_answer(question: str, context: str) -> str:
     """
-    This is the ONLY function that talks to an LLM. Swap the model/provider
-    here (OpenAI, Anthropic, Google, or a local model via Ollama) without
-    touching any other part of the chatbot pipeline.
+    This is the ONLY function that talks to an LLM.
     """
     full_prompt = f"{SYSTEM_PROMPT}\n\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
+
+    if not GEMINI_API_KEY:
+        return "The assistant isn't configured yet — missing GEMINI_API_KEY."
+
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=GEMINI_API_KEY)
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(full_prompt)
+        return response.text.strip()
+    except Exception as e:
+        print(f"Gemini chatbot call failed: {e}")
+        return "Sorry, I couldn't process that right now. Please try again in a moment."
+#def generate_answer(question: str, context: str) -> str:
+#    """
+ #   This is the ONLY function that talks to an LLM. Swap the model/provider
+  #  here (OpenAI, Anthropic, Google, or a local model via Ollama) without
+   # touching any other part of the chatbot pipeline.
+    #"""
+    #full_prompt = f"{SYSTEM_PROMPT}\n\nContext:\n{context}\n\nQuestion: {question}\n\nAnswer:"
 
     # Placeholder — plug in whichever provider you choose. Example shapes:
     #
@@ -90,7 +112,8 @@ def generate_answer(question: str, context: str) -> str:
     #       json={"model": "llama3", "prompt": full_prompt, "stream": False})
     #   return r.json()["response"]
 
-    raise NotImplementedError("Choose and wire in an LLM provider here.")
+    #raise NotImplementedError("Choose and wire in an LLM provider here.")
+
 
 
 def answer_question(db: Session, user_id: int, question: str) -> str:

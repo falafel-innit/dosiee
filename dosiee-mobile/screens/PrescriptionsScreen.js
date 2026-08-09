@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import api, { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, shadow } from '../theme';
+import { cancelAllNotifications } from '../services/notifications';
 
 const statusStyles = {
   uploaded: { bg: '#FFF3E0', color: '#E9A23B', label: 'Needs Parsing' },

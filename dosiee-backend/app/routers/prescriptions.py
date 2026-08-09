@@ -119,20 +119,9 @@ def confirm_prescription(prescription_id: int, payload: schemas.ConfirmRequest, 
     if not prescription:
         raise HTTPException(status_code=404, detail="Prescription not found")
 
-    # Validate every slot against the allowed relation rules before creating anything
-    for med in payload.medicines:
-        if not med.timing_slots:
-            raise HTTPException(status_code=400, detail=f"{med.name} needs at least one timing slot")
-        for slot in med.timing_slots:
-            allowed = ANCHOR_RELATION_RULES.get(slot.anchor)
-            if not allowed:
-                raise HTTPException(status_code=400, detail=f"Unknown anchor: {slot.anchor}")
-            if slot.relation not in allowed:
-                raise HTTPException(status_code=400, detail=f"{slot.relation} is not allowed for {slot.anchor}")
-
     user_schedule = db.query(models.UserSchedule).filter(models.UserSchedule.user_id == current_user.id).first()
 
-    created = []
+    created_doses = []  # NEW: collect dose info to return to the app
     today = datetime.date.today()
     for med in payload.medicines:
         db_medicine = models.Medicine(
@@ -148,12 +137,24 @@ def confirm_prescription(prescription_id: int, payload: schemas.ConfirmRequest, 
             for slot in med.timing_slots:
                 anchor_time = _resolve_anchor_time(slot.anchor, user_schedule)
                 dose_time = _compute_slot_time(anchor_time, slot.relation)
-                db.add(models.Dose(medicine_id=db_medicine.id, scheduled_time=datetime.datetime.combine(dose_date, dose_time)))
-        created.append(db_medicine)
+                dose_datetime = datetime.datetime.combine(dose_date, dose_time)
+                new_dose = models.Dose(medicine_id=db_medicine.id, scheduled_time=dose_datetime)
+                db.add(new_dose)
+                db.flush()
+                created_doses.append({
+                    "medicine_name": med.name,
+                    "dosage": med.dosage,
+                    "scheduled_time": dose_datetime.isoformat(),
+                })
 
     prescription.status = "confirmed"
     db.commit()
-    return {"prescription_id": prescription.id, "status": "confirmed", "medicines_created": len(created)}
+    return {
+        "prescription_id": prescription.id,
+        "status": "confirmed",
+        "medicines_created": len(payload.medicines),
+        "doses": created_doses,  # NEW
+    }
 
 
 @router.delete("/prescriptions/{prescription_id}")

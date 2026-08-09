@@ -3,6 +3,8 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Feather } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
+
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { attachAuthInterceptor } from './api/client';
@@ -22,6 +24,15 @@ const HomeStack = createNativeStackNavigator();
 const PrescriptionsStack = createNativeStackNavigator();
 const ChatbotStack = createNativeStackNavigator();
 const Tabs = createBottomTabNavigator();
+
+
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 function AuthNavigator() {
   return (

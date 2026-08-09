@@ -26,8 +26,11 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "CAMERA",
         "READ_EXTERNAL_STORAGE"
-      ]
+      ],
+      "package": "com.anonymous.dosieemobile"
     },
     "web": {
       "output": "static",
@@ -35,6 +38,13 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#2A9D8F"
+        }
+      ],
       [
         "expo-splash-screen",
         {

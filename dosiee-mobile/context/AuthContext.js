@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { requestNotificationPermission } from '../services/notifications';
 
 const AuthContext = createContext();
 
@@ -24,8 +25,13 @@ export function AuthProvider({ children }) {
 
   const setToken = async (value) => {
     setTokenState(value);
-    if (value) await AsyncStorage.setItem('token', value);
-    else { await AsyncStorage.removeItem('token'); await AsyncStorage.removeItem('userEmail'); }
+    if (value) {
+      await AsyncStorage.setItem('token', value);
+      await requestNotificationPermission();
+    } else {
+      await AsyncStorage.removeItem('token');
+      await AsyncStorage.removeItem('userEmail');
+    }
   };
 
   const setUserEmail = async (value) => {
@@ -40,4 +46,6 @@ export function AuthProvider({ children }) {
   );
 }
 
-export function useAuth() { return useContext(AuthContext); }
+export function useAuth() {
+  return useContext(AuthContext);
+}

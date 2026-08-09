@@ -4,6 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import api, { BASE_URL } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, shadow } from '../theme';
+import { scheduleDoseNotification } from '../services/notifications';
 
 const ANCHORS = ['breakfast', 'lunch', 'dinner', 'sleep', 'extra'];
 const RELATION_RULES = {
@@ -76,28 +77,35 @@ export default function PrescriptionReviewScreen({ route, navigation }) {
   };
 
   const scheduleMedicines = async () => {
-    if (medicines.length === 0) {
-      Alert.alert('No medicines', 'Add at least one medicine before scheduling.');
-      return;
+  if (medicines.length === 0) {
+    Alert.alert('No medicines', 'Add at least one medicine before scheduling.');
+    return;
+  }
+  setSubmitting(true);
+  try {
+    const payload = {
+      medicines: medicines.map(m => ({
+        name: m.name, dosage: m.dosage, frequency: m.frequency,
+        duration_days: parseInt(m.duration_days) || 7,
+        timing_slots: m.timing_slots,
+      })),
+    };
+    const response = await api.post(`/prescriptions/${id}/confirm`, payload, { headers: { Authorization: `Bearer ${token}` } });
+
+    // NEW: schedule a local notification for every dose returned
+    const doses = response.data.doses || [];
+    for (const dose of doses) {
+      await scheduleDoseNotification(dose.medicine_name, dose.dosage, dose.scheduled_time);
     }
-    setSubmitting(true);
-    try {
-      const payload = {
-        medicines: medicines.map(m => ({
-          name: m.name, dosage: m.dosage, frequency: m.frequency,
-          duration_days: parseInt(m.duration_days) || 7,
-          timing_slots: m.timing_slots,
-        })),
-      };
-      await api.post(`/prescriptions/${id}/confirm`, payload, { headers: { Authorization: `Bearer ${token}` } });
-      Alert.alert('Scheduled', `${medicines.length} medicine(s) added to Today's Schedule.`);
-      navigation.navigate('HomeTab');
-    } catch (err) {
-      Alert.alert('Failed to schedule', err.response?.data?.detail || 'Something went wrong');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+
+    Alert.alert('Scheduled', `${medicines.length} medicine(s) added, with ${doses.length} reminder(s) set.`);
+    navigation.navigate('HomeTab');
+  } catch (err) {
+    Alert.alert('Failed to schedule', err.response?.data?.detail || 'Something went wrong');
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const isImage = (url) => url && /\.(jpg|jpeg|png)$/i.test(url);
 
